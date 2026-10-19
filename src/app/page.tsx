@@ -271,7 +271,7 @@ export default function HomePage() {
                 <GithubIcon size={18} />
               </a>
               <a
-                href="https://www.linkedin.com/in/hannan-siddiqui"
+                href="https://www.linkedin.com/in/hannandev/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="nav-social-btn"
@@ -795,7 +795,7 @@ export default function HomePage() {
                 <span>GitHub</span>
               </a>
               <a
-                href="https://www.linkedin.com/in/hannan-siddiqui"
+                href="https://www.linkedin.com/in/hannandev/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="social-btn linkedin"
