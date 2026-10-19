@@ -91,6 +91,60 @@ function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+// Resolve cookies if provided via environment or local file
+function getCookiesPath(): string | null {
+  // 1. Check local cookies.txt file
+  const localCookies = path.join(process.cwd(), "cookies.txt");
+  if (fs.existsSync(localCookies)) {
+    return localCookies;
+  }
+
+  // 2. Check YOUTUBE_COOKIES or COOKIES env var (raw Netscape or base64)
+  const envCookies = process.env.YOUTUBE_COOKIES || process.env.COOKIES;
+  if (envCookies) {
+    try {
+      const targetPath = path.join(os.tmpdir(), "apextube_cookies.txt");
+      let content = envCookies.trim();
+      // Decode base64 if needed
+      if (!content.includes("\t") && content.length > 50) {
+        try {
+          content = Buffer.from(content, "base64").toString("utf-8");
+        } catch {}
+      }
+      fs.writeFileSync(targetPath, content, "utf-8");
+      return targetPath;
+    } catch (e) {
+      console.error("Failed to write cookies from env:", e);
+    }
+  }
+
+  return null;
+}
+
+// Common anti-bot, player-client, and cipher resolver arguments
+function getYtDlpBaseArgs(): string[] {
+  const args = [
+    "-m",
+    "yt_dlp",
+    "--js-runtimes",
+    "node",
+    "--remote-components",
+    "ejs:github",
+    // Bypass datacenter IP blocks by requesting via Android/iOS player APIs
+    "--extractor-args",
+    "youtube:player_client=android,ios,web",
+    "--user-agent",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+  ];
+
+  const cookiePath = getCookiesPath();
+  if (cookiePath) {
+    args.push("--cookies", cookiePath);
+  }
+
+  return args;
+}
+
 // Clean up ephemeral files older than 5 minutes
 export function cleanOldDownloads() {
   try {
@@ -122,12 +176,7 @@ export async function extractVideoInfo(videoUrl: string): Promise<VideoMetadata>
     }
 
     const args = [
-      "-m",
-      "yt_dlp",
-      "--js-runtimes",
-      "node",
-      "--remote-components",
-      "ejs:github",
+      ...getYtDlpBaseArgs(),
       "-J",
       "--no-playlist",
       videoUrl,
@@ -148,7 +197,9 @@ export async function extractVideoInfo(videoUrl: string): Promise<VideoMetadata>
     proc.on("close", (code) => {
       if (code !== 0) {
         let msg = stderrData.trim() || `yt-dlp exited with code ${code}`;
-        if (msg.includes("Video unavailable")) {
+        if (msg.includes("Sign in to confirm you’re not a bot") || msg.includes("HTTP Error 429")) {
+          msg = "YouTube is requesting verification for this server IP. Please try again or provide cookies.";
+        } else if (msg.includes("Video unavailable")) {
           msg = "Video is unavailable, private, or has been removed.";
         } else if (msg.includes("Incomplete YouTube ID")) {
           msg = "Invalid YouTube URL or ID.";
@@ -387,14 +438,9 @@ export function startDownloadJob({
 
   jobs.set(jobId, job);
 
-  // Build yt-dlp arguments with high-speed multi-fragment concurrency and EJS cipher solver
+  // Build yt-dlp arguments with high-speed multi-fragment concurrency, player client bypass, and EJS cipher solver
   const args = [
-    "-m",
-    "yt_dlp",
-    "--js-runtimes",
-    "node",
-    "--remote-components",
-    "ejs:github",
+    ...getYtDlpBaseArgs(),
     "-N",
     "5", // 5 concurrent DASH fragment streams
     "--buffer-size",

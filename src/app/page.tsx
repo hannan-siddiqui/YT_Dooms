@@ -795,7 +795,7 @@ export default function HomePage() {
                 <span>GitHub</span>
               </a>
               <a
-                href="https://www.linkedin.com/in/hannandev/"
+                href="https://www.linkedin.com/in/hannan-siddiqui"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="social-btn linkedin"
