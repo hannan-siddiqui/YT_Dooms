@@ -1,0 +1,6 @@
+node_modules
+.next
+.git
+downloads_temp
+.env*.local
+npm-debug.log*
