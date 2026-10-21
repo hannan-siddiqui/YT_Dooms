@@ -105,6 +105,12 @@ function getCookiesPath(): string | null {
     return localCookies;
   }
 
+  // 3. Check Render Secret File path (/etc/secrets/cookies.txt)
+  const renderSecret = "/etc/secrets/cookies.txt";
+  if (fs.existsSync(renderSecret)) {
+    return renderSecret;
+  }
+
   // 3. Check YOUTUBE_COOKIES or COOKIES env var (raw Netscape or base64)
   const envCookies = process.env.YOUTUBE_COOKIES || process.env.COOKIES;
   if (envCookies) {
@@ -164,14 +170,17 @@ function getYtDlpBaseArgs(): string[] {
   const cookieBrowser = getCookiesBrowser();
 
   if (cookiePath) {
+    console.log("[yt-dlp] Using cookies from:", cookiePath);
     args.push("--cookies", cookiePath);
+    // Explicitly use web client that matches the browser cookies
+    args.push("--extractor-args", "youtube:player_client=web,web_creator");
   } else if (cookieBrowser) {
+    console.log("[yt-dlp] Using cookies from browser:", cookieBrowser);
     args.push("--cookies-from-browser", cookieBrowser);
+    args.push("--extractor-args", "youtube:player_client=web,web_creator");
+  } else {
+    console.warn("[yt-dlp] No cookies detected! Cloud server requests may be blocked by YouTube.");
   }
-
-  // NOTE: We do NOT force "player_client=android,ios" because YouTube enabled SABR-only streaming
-  // on mobile clients, which causes all video streams except legacy 360p to be skipped!
-  // yt-dlp's default multi-client negotiator unlocks all 4K, 1440p, 1080p, and 720p streams.
 
   return args;
 }
