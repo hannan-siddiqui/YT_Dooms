@@ -166,20 +166,29 @@ function getYtDlpBaseArgs(): string[] {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
   ];
 
+  // PO Token provider: bgutil HTTP server integration
+  // This solves YouTube's "Sign in to confirm you're not a bot" challenge
+  const potServerUrl = process.env.POT_SERVER_URL || "http://127.0.0.1:4416";
+  args.push(
+    "--extractor-args",
+    `youtubepot-bgutilhttp:base_url=${potServerUrl}`
+  );
+
   const cookiePath = getCookiesPath();
   const cookieBrowser = getCookiesBrowser();
 
   if (cookiePath) {
     console.log("[yt-dlp] Using cookies from:", cookiePath);
     args.push("--cookies", cookiePath);
-    // Explicitly use web client that matches the browser cookies
-    args.push("--extractor-args", "youtube:player_client=web,web_creator");
+    args.push("--extractor-args", "youtube:player_client=web,default");
   } else if (cookieBrowser) {
     console.log("[yt-dlp] Using cookies from browser:", cookieBrowser);
     args.push("--cookies-from-browser", cookieBrowser);
-    args.push("--extractor-args", "youtube:player_client=web,web_creator");
+    args.push("--extractor-args", "youtube:player_client=web,default");
   } else {
-    console.warn("[yt-dlp] No cookies detected! Cloud server requests may be blocked by YouTube.");
+    // When no cookies are provided, let yt-dlp use its default client priority (visionos)
+    // with the bgutil PO token server to fetch direct media URLs without SABR or bot challenges
+    console.log("[yt-dlp] Using PO Token server for bot bypass without cookies");
   }
 
   return args;
@@ -237,7 +246,13 @@ export async function extractVideoInfo(videoUrl: string): Promise<VideoMetadata>
     proc.on("close", (code) => {
       if (code !== 0) {
         let msg = stderrData.trim() || `yt-dlp exited with code ${code}`;
-        if (msg.includes("Sign in to confirm you’re not a bot") || msg.includes("HTTP Error 429")) {
+        const lowerMsg = msg.toLowerCase();
+        if (
+          lowerMsg.includes("not a bot") ||
+          lowerMsg.includes("sign in to confirm") ||
+          lowerMsg.includes("http error 429") ||
+          lowerMsg.includes("verify")
+        ) {
           msg = "YouTube is requesting verification for this server IP. Please try again or provide cookies.";
         } else if (msg.includes("Video unavailable")) {
           msg = "Video is unavailable, private, or has been removed.";
@@ -249,6 +264,7 @@ export async function extractVideoInfo(videoUrl: string): Promise<VideoMetadata>
 
       try {
         const info = JSON.parse(stdoutData);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rawFormats: any[] = info.formats || [];
 
         // Find best audio stream for size estimation
@@ -422,8 +438,9 @@ export async function extractVideoInfo(videoUrl: string): Promise<VideoMetadata>
         };
 
         resolve(metadata);
-      } catch (err: any) {
-        reject(new Error(`Failed to parse video information: ${err.message}`));
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        reject(new Error(`Failed to parse video information: ${errMsg}`));
       }
     });
 
