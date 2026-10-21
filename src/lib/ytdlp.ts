@@ -93,24 +93,40 @@ function formatDuration(seconds: number): string {
 
 // Resolve cookies if provided via environment or local file
 function getCookiesPath(): string | null {
-  // 1. Check local cookies.txt file
+  // 1. Check custom path from env
+  const customPath = process.env.YOUTUBE_COOKIES_FILE || process.env.COOKIES_FILE;
+  if (customPath && fs.existsSync(customPath)) {
+    return customPath;
+  }
+
+  // 2. Check local cookies.txt file in project root
   const localCookies = path.join(process.cwd(), "cookies.txt");
   if (fs.existsSync(localCookies)) {
     return localCookies;
   }
 
-  // 2. Check YOUTUBE_COOKIES or COOKIES env var (raw Netscape or base64)
+  // 3. Check YOUTUBE_COOKIES or COOKIES env var (raw Netscape or base64)
   const envCookies = process.env.YOUTUBE_COOKIES || process.env.COOKIES;
   if (envCookies) {
     try {
       const targetPath = path.join(os.tmpdir(), "apextube_cookies.txt");
       let content = envCookies.trim();
+
+      // If user pasted multiline text with literal escaped \n or \t into Railway
+      if (content.includes("\\n")) {
+        content = content.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+      }
+
       // Decode base64 if needed
       if (!content.includes("\t") && content.length > 50) {
         try {
-          content = Buffer.from(content, "base64").toString("utf-8");
+          const decoded = Buffer.from(content, "base64").toString("utf-8");
+          if (decoded.includes("\t") || decoded.includes("youtube") || decoded.includes("# Netscape")) {
+            content = decoded;
+          }
         } catch {}
       }
+
       fs.writeFileSync(targetPath, content, "utf-8");
       return targetPath;
     } catch (e) {
@@ -118,6 +134,15 @@ function getCookiesPath(): string | null {
     }
   }
 
+  return null;
+}
+
+// Get browser name if user wants yt-dlp to read cookies directly from local browser (chrome, edge, firefox, etc.)
+function getCookiesBrowser(): string | null {
+  const browser = process.env.YOUTUBE_COOKIES_BROWSER || process.env.COOKIES_BROWSER;
+  if (browser && typeof browser === "string" && browser.trim().length > 0) {
+    return browser.trim().toLowerCase();
+  }
   return null;
 }
 
@@ -130,16 +155,25 @@ function getYtDlpBaseArgs(): string[] {
     "node",
     "--remote-components",
     "ejs:github",
-    // Bypass datacenter IP blocks by requesting via Android/iOS player APIs
-    "--extractor-args",
-    "youtube:player_client=android,ios,web",
+    "--no-mark-watched",
     "--user-agent",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
   ];
 
   const cookiePath = getCookiesPath();
+  const cookieBrowser = getCookiesBrowser();
+
   if (cookiePath) {
     args.push("--cookies", cookiePath);
+    // When valid cookies are provided, use standard web & TV player clients to unlock 4K/8K formats
+    args.push("--extractor-args", "youtube:player_client=web,tv,web_creator");
+  } else if (cookieBrowser) {
+    args.push("--cookies-from-browser", cookieBrowser);
+    // When browser cookies are provided, unlock full 4K formats
+    args.push("--extractor-args", "youtube:player_client=web,tv,web_creator");
+  } else {
+    // Fallback when no cookies: request via Android/iOS/web player APIs to attempt bypass
+    args.push("--extractor-args", "youtube:player_client=android,ios,web");
   }
 
   return args;
