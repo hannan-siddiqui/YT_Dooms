@@ -165,16 +165,13 @@ function getYtDlpBaseArgs(): string[] {
 
   if (cookiePath) {
     args.push("--cookies", cookiePath);
-    // When valid cookies are provided, use standard web & TV player clients to unlock 4K/8K formats
-    args.push("--extractor-args", "youtube:player_client=web,tv,web_creator");
   } else if (cookieBrowser) {
     args.push("--cookies-from-browser", cookieBrowser);
-    // When browser cookies are provided, unlock full 4K formats
-    args.push("--extractor-args", "youtube:player_client=web,tv,web_creator");
-  } else {
-    // Fallback when no cookies: request via Android/iOS/web player APIs to attempt bypass
-    args.push("--extractor-args", "youtube:player_client=android,ios,web");
   }
+
+  // NOTE: We do NOT force "player_client=android,ios" because YouTube enabled SABR-only streaming
+  // on mobile clients, which causes all video streams except legacy 360p to be skipped!
+  // yt-dlp's default multi-client negotiator unlocks all 4K, 1440p, 1080p, and 720p streams.
 
   return args;
 }
@@ -488,10 +485,10 @@ export function startDownloadJob({
 
   if (type === "video") {
     const targetHeight = height || 1080;
-    // Format selector: best video up to height + best audio, muxed to mp4
+    // Format selector: best video stream up to selected resolution (including 4K/2K VP9/AV1) + best audio, muxed to mp4
     args.push(
       "-f",
-      `bestvideo[height<=${targetHeight}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${targetHeight}]+bestaudio/best[height<=${targetHeight}]`
+      `bestvideo[height<=${targetHeight}]+bestaudio/best[height<=${targetHeight}]/best`
     );
     args.push("--merge-output-format", "mp4");
     outTemplate = path.join(outDir, `${jobId}_${safeTitle} [${targetHeight}p].%(ext)s`);
